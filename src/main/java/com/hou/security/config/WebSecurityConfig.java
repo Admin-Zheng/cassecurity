@@ -3,11 +3,16 @@ package com.hou.security.config;
 import javax.sql.DataSource;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
+import org.springframework.security.config.annotation.method.configuration.EnableGlobalMethodSecurity;
+import org.springframework.security.config.annotation.method.configuration.GlobalMethodSecurityConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.builders.WebSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -16,6 +21,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import com.hou.security.compemt.UserDetailServiceImpl;
 
 @Configuration
+@EnableWebSecurity
+@EnableGlobalMethodSecurity(prePostEnabled = true,securedEnabled=true,jsr250Enabled=true)
 public class WebSecurityConfig extends WebSecurityConfigurerAdapter {
 	
 	//使用自定义用户验证服务时使用
@@ -31,6 +38,7 @@ public class WebSecurityConfig extends WebSecurityConfigurerAdapter {
 	String roleQuery = "SELECT u.user_name,r.role_name FROM t_user u,t_role r,t_user_role ur WHERE u.id=ur.user_id AND r.id=ur.role_id AND u.user_name=?";
 	
 	
+
 	/* 用来配置用户签名服务，也就是配置用户登录验证，主要是用user-details机制，并且在此接口中还可以配置用户角色
 	 * 
 	 * 用户信息可以有两种方式加载到spring-security中。一种是使用内存用户，既把用户名和密码直接硬编码。一种是使用jdbc用户，即把
@@ -69,7 +77,7 @@ public class WebSecurityConfig extends WebSecurityConfigurerAdapter {
 		*/
 		
 		
-		//二、使用数据库保存用户
+		/*//二、使用数据库保存用户
 		//1、创建密码编码器，不管怎样密码肯定不是明文，因此需要密码编码器
 		PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 		//使用数据库认证
@@ -82,15 +90,15 @@ public class WebSecurityConfig extends WebSecurityConfigurerAdapter {
 			.usersByUsernameQuery(pwdQuery)
 			//设置获取角色的sql，改sql返回多条数据，该用户会被设置多个权限
 			.authoritiesByUsernameQuery(roleQuery);
+		*/
 		
 		
-		
-		/*//三、自定义用户认证服务
+		//三、自定义用户认证服务
 		//springsecurity通过userdetailservice接口获取用户信息，改接口中只有一个loadUserByUsername方法，该方法返回一个userDetail对象，该对象保存用户的信息
 		//改方式具体实现，请看我自定义的userDetailServiceImpl类
 		PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 		auth.userDetailsService(userDetailsService)
-		.passwordEncoder(passwordEncoder);*/
+		.passwordEncoder(passwordEncoder);
 		
 	}
 	/* 用来配置拦截保护的请求，哪些是需要验证的，哪些是不需要验证，哪些是需要特定角色验证的
@@ -112,28 +120,56 @@ public class WebSecurityConfig extends WebSecurityConfigurerAdapter {
 		
 		//先限定签名后的请求
 		/* ####第一阶段，先把需要认证的权限付给角色#### */
-		http.authorizeRequests()
+		http.authorizeRequests() //拦截请求，创建FilterSecurityInterceptor
 			//限定"/user/welcom","/user/detail" 这两个路径只有"USER"角色可以访问
 			//.antMatchers("/user/welcom","/user/detail").hasAnyRole("USER")
-			.antMatchers("/user/welcom","/user/detail").authenticated()
+			.antMatchers("/user/welcom","/user/detail").authenticated()  //在创建过滤器的基础上的一些自定义配置
 			//限定"/admin/**"路径，只有拥有ADMIN角色的才可以访问
 			//.antMatchers("/admin").hasAuthority("ROLE_ADMIN")
-			.antMatchers("/admin").authenticated()
+			//.antMatchers("/admin").authenticated()
 			//其他路径需要签名后才可以访问
-			//.anyRequest().authenticated()
+			.anyRequest().authenticated()
 			//其他路径都允许访问，但是这里请求的前提已经是签名了的，所以整合起来就是其他路径签名后访问
-			.anyRequest().permitAll()
+			//.anyRequest().permitAll()  //在创建过滤器的基础上的一些自定义配置
 			/* ######第二阶段，开启没有配置权限的其他请求 #######*/
-			.and().anonymous()
+			.and()  //用and来表示配置过滤器结束，以便进行下一个过滤器的创建和配置
+			.anonymous()
 			/* ######第三阶段，使用spring security默认登录页面，开启基本http基础验证 #######*/
 			.and()
-			.formLogin()
-			.and().httpBasic();
+			.formLogin() //设置表单登录，创建UsernamePasswordAuthenticationFilter
+			.and()
+			.httpBasic(); //basic验证，创建BasicAuthenticationFilter
 		
 		//关闭跨域访问
 		http.csrf().disable();
+		
+		
+		
 	}
-	//
+	//spring security配置模板
+	
+	/*@Override
+    protected void configure(HttpSecurity http) throws Exception {
+        http
+        .authorizeRequests() //注册FilterSecurityInterceptor
+             .antMatchers("/index.html").permitAll()//访问index.html不要权限验证
+             .anyRequest().authenticated()//其他所有路径都需要权限校验
+        .and()
+             .csrf().disable()//默认开启，可以显示关闭
+        .formLogin()  //内部注册 UsernamePasswordAuthenticationFilter
+            .loginPage("/login.html") //表单登录页面地址
+            .loginProcessingUrl("/login")//form表单POST请求url提交地址，默认为/login
+            .passwordParameter("password")//form表单用户名参数名
+            .usernameParameter("username") //form表单密码参数名
+            .successForwardUrl("/success.html")  //登录成功跳转地址
+            .failureForwardUrl("/error.html") //登录失败跳转地址
+            //.defaultSuccessUrl()//如果用户没有访问受保护的页面，默认跳转到页面
+            //.failureUrl()
+            //.failureHandler(AuthenticationFailureHandler)
+            //.successHandler(AuthenticationSuccessHandler)
+            //.failureUrl("/login?error")
+            .permitAll();//允许所有用户都有权限访问loginPage，loginProcessingUrl，failureForwardUrl
+    }*/
 	
 	
 	/* 用来配置filter链
@@ -149,6 +185,6 @@ public class WebSecurityConfig extends WebSecurityConfigurerAdapter {
 		String encode = new BCryptPasswordEncoder().encode("123456");
 		System.out.println(encode);
 	}
-	
+		
 
 }
